@@ -1,7 +1,7 @@
 package com.example.demo.controller;
 
 import com.example.demo.DemoApplication;
-import com.example.demo.model.Package;
+import com.example.demo.model.DebPackage;
 import org.springframework.util.ResourceUtils;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -21,46 +21,67 @@ public class PackageController
     @GetMapping("/")
     public List<String> all()
     {
-        final int OFFSET = 2;
-        List<String> packages = new ArrayList<>();
+        if (!DemoApplication.allPkgCache.isEmpty())
+            return DemoApplication.allPkgCache;
 
-        try (InputStream input = new FileInputStream(ResourceUtils.getFile(DemoApplication.FILEPATH));
-             BufferedReader reader = new BufferedReader(new InputStreamReader(input)))
-        {
-            String line;
+        synchronized(this) {
+            if (!DemoApplication.allPkgCache.isEmpty())
+                return DemoApplication.allPkgCache;
 
-            while ((line = reader.readLine()) != null) {
-                if (line.startsWith(DemoApplication.PACKAGE)) {
-                    packages.add(line.substring(line.indexOf(":") + OFFSET));
+            // temporary list for adding packages
+            List<String> tmp = new ArrayList<>();
+
+            try (InputStream input = new FileInputStream(ResourceUtils.getFile(DemoApplication.FILEPATH));
+                 BufferedReader reader = new BufferedReader(new InputStreamReader(input))) {
+                String line;
+
+                while ((line = reader.readLine()) != null) {
+                    if (line.startsWith(DemoApplication.PACKAGE)) {
+                        tmp.add(line.substring(line.indexOf(":") + DemoApplication.OFFSET));
+                    }
                 }
+
+                // synchronized addAll
+                Collections.sort(tmp);
+                DemoApplication.allPkgCache.addAll(tmp);
+            } catch (Exception e) {
+                e.printStackTrace();
             }
-        } catch (Exception e) {
-            e.printStackTrace();
         }
 
-        Collections.sort(packages);
-
-        return packages;
+        return DemoApplication.allPkgCache;
     }
 
     @GetMapping(":{name}")
-    public Package info(@PathVariable String name)
+    public DebPackage info(@PathVariable String name)
     {
-        final int OFFSET = 2;
-        Package p = null;
+        // block here to search for the package
+        DebPackage p = DemoApplication.cache.computeIfAbsent(name, this::findDebPackage);
+
+        // package was not found
+        if (p == null)
+            throw new PackageNotFoundException(name);
+
+        return p;
+    }
+
+    private DebPackage findDebPackage(String name)
+    {
+        DebPackage p = null;
 
         try (InputStream input = new FileInputStream(ResourceUtils.getFile(DemoApplication.FILEPATH));
              BufferedReader reader = new BufferedReader(new InputStreamReader(input)))
         {
             String line;
             String currPkgName = "";
+            List<String> dependents = new ArrayList<>();
 
             while ((line = reader.readLine()) != null) {
                 if (line.startsWith(DemoApplication.PACKAGE))
-                    currPkgName = line.substring(line.indexOf(":") + OFFSET);
+                    currPkgName = line.substring(line.indexOf(":") + DemoApplication.OFFSET);
 
                 if (line.equals(DemoApplication.PACKAGE + name)) {
-                    p = new Package(name);
+                    p = new DebPackage(name);
 
                     do {
                         line = reader.readLine();
@@ -69,15 +90,29 @@ public class PackageController
                             break;
 
                         if (line.startsWith(DemoApplication.DEPENDS)) {
-                            String[] deps = line.substring(line.indexOf(":") + OFFSET).strip().split(",");
+                            String[] deps = line.substring(line.indexOf(":") + DemoApplication.OFFSET).strip().split(",");
 
                             for (String d : deps) {
                                 d = d.strip();
-                                p.getDependencies().add(d.contains(" ") ? d.substring(0, d.indexOf(" ")) : d);
+
+                                // pipe symbol means OR
+                                if (d.contains("|")) {
+                                    String tmp = "";
+                                    String[] orDeps = d.split("\\|");
+                                    for (int i = 0; i < orDeps.length; i++) {
+                                        d = orDeps[i].strip();
+                                        tmp += d.contains(" ") ? d.substring(0, d.indexOf(" ")) : d;
+                                        if (i < orDeps.length-1)
+                                            tmp += " | ";
+                                    }
+                                    p.getDependencies().add(tmp);
+                                } else {
+                                    p.getDependencies().add(d.contains(" ") ? d.substring(0, d.indexOf(" ")) : d);
+                                }
                             }
 
                         } else if (line.startsWith(DemoApplication.DESCR)) {
-                            StringBuilder sb = new StringBuilder(line.substring(line.indexOf(":") + OFFSET));
+                            StringBuilder sb = new StringBuilder(line.substring(line.indexOf(":") + DemoApplication.OFFSET));
 
                             while ((line = reader.readLine()).startsWith(" ")) {
                                 sb.append(line);
@@ -87,20 +122,19 @@ public class PackageController
                         }
                     } while (!line.startsWith(DemoApplication.PACKAGE));
 
-                } else if (line.startsWith(DemoApplication.DEPENDS) && line.contains(name)) {
-                    if (p != null)
-                        p.getDependents().add(currPkgName);
+                } else if (line.startsWith(DemoApplication.DEPENDS) && (line.contains(" " + name + " ") || line.contains(" " + name + ",") || line.contains(", " + name) || line.contains(": " + name))) {
+                    dependents.add(currPkgName);
                 }
             }
+
+            // add dependents collected from file
+            if (p != null)
+                p.getDependents().addAll(dependents);
+
         } catch (Exception e) {
             e.printStackTrace();
         }
 
-        // package was not found
-        if (p == null)
-            throw new PackageNotFoundException(name);
-
-        // success
         return p;
     }
 }

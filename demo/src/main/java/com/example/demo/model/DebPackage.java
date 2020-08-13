@@ -3,16 +3,16 @@ package com.example.demo.model;
 import java.util.HashSet;
 import java.util.Set;
 
-public class Package
+public class DebPackage
 {
     private String name;
     private String description = "";
     private Set<String> dependencies = new HashSet<>();
     private Set<String> dependents = new HashSet<>();
 
-    public Package() {}
+    public DebPackage() {}
 
-    public Package(String name)
+    public DebPackage(String name)
     {
         this.name = name;
     }
