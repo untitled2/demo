@@ -32,7 +32,8 @@ public class PackageController
             List<String> tmp = new ArrayList<>();
 
             try (InputStream input = new FileInputStream(ResourceUtils.getFile(DemoApplication.FILEPATH));
-                 BufferedReader reader = new BufferedReader(new InputStreamReader(input))) {
+                 BufferedReader reader = new BufferedReader(new InputStreamReader(input)))
+	    {
                 String line;
 
                 while ((line = reader.readLine()) != null) {
