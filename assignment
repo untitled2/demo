@@ -1,0 +1,8 @@
+On a Debian or an Ubuntu system there is a file called /var/lib/dpkg/status that holds information about software packages that the system knows about. Write a small program that exposes some key information about currently installed packages via a REST API. The program should listen to HTTP requests on port 8080 on localhost and provide the following features:
+
+1. The root API endpoint for the packages `/api/packages/` lists installed packages alphabetically and allows the consumer to find the details (2.) for each package.
+2. Each package has its own API endpoint for details `/api/packages/:package-name`, the following information should be returned:
+- Name
+- Description
+- The names of the packages the current package depends on (skip version numbers)
+- The names of the packages that depend on the current package
